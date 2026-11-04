@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Lock, ArrowRight, ShieldCheck } from 'lucide-react';
+import { verifyPassword, setKey } from '../utils/storage';
 
 const VALID_HASH = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918';
 
@@ -18,9 +19,13 @@ export default function Login({ onLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    const hash = await hashPassword(password);
-    if (hash === VALID_HASH) onLogin();
-    else {
+    const result = await verifyPassword(password);
+    let isValid = result === 'ok';
+    if (result === 'offline') isValid = (await hashPassword(password)) === VALID_HASH;
+    if (isValid) {
+      setKey(password);
+      onLogin();
+    } else {
       setError(true);
       setPassword('');
       setIsLoading(false);
@@ -53,8 +58,8 @@ export default function Login({ onLogin }) {
               onChange={(e) => { setPassword(e.target.value); setError(false); }}
               placeholder="Contraseña de administrador"
               className={`w-full px-5 py-4 rounded-2xl border-2 text-sm font-bold focus:outline-none transition-all ${
-                error 
-                  ? 'border-red-400 bg-red-50 text-red-900 placeholder-red-300' 
+                error
+                  ? 'border-red-400 bg-red-50 text-red-900 placeholder-red-300'
                   : 'border-slate-200 bg-slate-50/50 focus:border-slate-400 focus:bg-white text-slate-900 placeholder-slate-400'
               }`}
               autoFocus
