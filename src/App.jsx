@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Download, Plus, Trash2, RotateCcw, CheckCircle2, AlertCircle, LogOut, TableProperties, Cloud, CloudOff, Loader2, Upload, FileJson } from 'lucide-react';
+import {
+  Download, Plus, Trash2, RotateCcw, CheckCircle2, AlertCircle, LogOut, TableProperties,
+  Cloud, CloudOff, Loader2, Upload, FileJson, Store, Users, Clock, CalendarCheck
+} from 'lucide-react';
 import StoreCard from './components/StoreCard';
 import DateRangePicker from './components/DateRangePicker';
 import Login from './components/Login';
 import PreviewExcel from './components/PreviewExcel';
-import { INITIAL_STORES, DEFAULT_COLORS, DAYS, formatWeekLabel, getShiftDetails, toLocalDateString } from './utils/constants';
+import { INITIAL_STORES, DAYS, formatWeekLabel, getShiftDetails, getShiftHours, toLocalDateString } from './utils/constants';
+import { buildPattern } from './utils/format';
 import { generateExcel } from './utils/excelExport';
 import { loadState, saveState, getKey, clearKey } from './utils/storage';
 
@@ -46,9 +50,9 @@ function Toast({ toast }) {
   if (!toast) return null;
   const isError = toast.type === 'error';
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] animate-[fadeIn_0.15s_ease-out]">
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] pop-in">
       <div className={`flex items-center gap-2.5 px-5 py-3.5 rounded-2xl shadow-xl border text-sm font-bold tracking-wide ${isError ? 'bg-white border-red-200 text-red-700' : 'bg-slate-900 border-slate-900 text-white'}`}>
-        {isError ? <AlertCircle size={18} /> : <CheckCircle2 size={18} className="text-red-400" />}
+        {isError ? <AlertCircle size={18} /> : <CheckCircle2 size={18} className="text-emerald-400" />}
         {toast.message}
       </div>
     </div>
@@ -57,16 +61,40 @@ function Toast({ toast }) {
 
 function SyncBadge({ status }) {
   const config = {
-    saving: { icon: <Loader2 size={13} strokeWidth={3} className="animate-spin" />, text: 'Guardando...', color: 'text-slate-500' },
-    saved: { icon: <Cloud size={13} strokeWidth={3} />, text: 'Guardado en la nube', color: 'text-emerald-600' },
-    error: { icon: <CloudOff size={13} strokeWidth={3} />, text: 'Error al guardar en la nube', color: 'text-red-600' },
-    local: { icon: <CloudOff size={13} strokeWidth={3} />, text: 'Solo en este dispositivo', color: 'text-amber-600' },
-    idle: { icon: <Cloud size={13} strokeWidth={3} />, text: 'Cargando...', color: 'text-slate-400' }
+    saving: { icon: <Loader2 size={12} strokeWidth={3} className="animate-spin" />, text: 'Guardando...', color: 'text-slate-500' },
+    saved: { icon: <Cloud size={12} strokeWidth={3} />, text: 'Guardado en la nube', color: 'text-emerald-600' },
+    error: { icon: <CloudOff size={12} strokeWidth={3} />, text: 'Error al guardar', color: 'text-red-600' },
+    local: { icon: <CloudOff size={12} strokeWidth={3} />, text: 'Solo en este dispositivo', color: 'text-amber-600' },
+    idle: { icon: <Cloud size={12} strokeWidth={3} />, text: 'Cargando...', color: 'text-slate-400' }
   }[status] || { icon: null, text: '', color: '' };
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest ${config.color}`}>
+    <span className={`inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${config.color}`}>
       {config.icon}{config.text}
     </span>
+  );
+}
+
+function StepCard({ number, title, children }) {
+  return (
+    <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex flex-col gap-3">
+      <div className="flex items-center gap-2.5">
+        <span className="w-6 h-6 rounded-full bg-[#d50000] text-white text-xs font-black flex items-center justify-center shrink-0">{number}</span>
+        <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">{title}</h3>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl px-4 py-3.5 flex items-center gap-3 shadow-sm">
+      <div className="w-10 h-10 rounded-xl bg-red-50 text-[#d50000] flex items-center justify-center shrink-0">{icon}</div>
+      <div className="min-w-0">
+        <div className="text-xl md:text-2xl font-black text-slate-900 leading-none">{value}</div>
+        <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1 truncate">{label}</div>
+      </div>
+    </div>
   );
 }
 
@@ -127,13 +155,17 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div className="min-h-screen bg-[#f0f4f8] flex items-center justify-center">
+      <div translate="no" className="min-h-screen bg-[#f0f4f8] flex items-center justify-center">
         <div className="flex items-center gap-3 text-slate-500 font-bold text-sm">
           <Loader2 size={20} strokeWidth={3} className="animate-spin text-[#d50000]" /> Cargando horarios...
         </div>
       </div>
     );
   }
+
+  const totalPeople = stores.reduce((sum, s) => sum + s.people.length, 0);
+  const totalHours = stores.reduce((sum, s) => sum + s.people.reduce((acc, p) =>
+    acc + DAYS.reduce((a, d) => a + getShiftHours(schedule[s.id]?.[p.id]?.[d]), 0), 0), 0);
 
   const handleLogout = () => {
     clearKey();
@@ -143,21 +175,15 @@ export default function App() {
 
   const handleDateChange = (start, end) => { setStartDate(start); setEndDate(end); };
 
-  const addPerson = (storeId) => {
+  const addPerson = (storeId, { name, color, pattern } = {}) => {
     const store = stores.find(s => s.id === storeId);
     if (!store) return;
     const newId = 'p' + Date.now();
-    const usedColors = new Set(store.people.map(p => p.color.toLowerCase()));
-    const color = DEFAULT_COLORS.find(c => !usedColors.has(c.toLowerCase()))
-      || '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
-    const name = `NUEVO ${store.people.length + 1}`;
-
-    setStores(prev => prev.map(s => s.id === storeId ? { ...s, people: [...s.people, { id: newId, name, color }] } : s));
-    setSchedule(prev => {
-      const days = {};
-      DAYS.forEach(day => { days[day] = { type: 'descansa', start: -1, end: -1 }; });
-      return { ...prev, [storeId]: { ...prev[storeId], [newId]: days } };
-    });
+    const finalName = (name || '').trim().toUpperCase() || `NUEVO ${store.people.length + 1}`;
+    const finalColor = /^#[0-9a-fA-F]{6}$/.test(color || '') ? color : '#d50000';
+    setStores(prev => prev.map(s => s.id === storeId ? { ...s, people: [...s.people, { id: newId, name: finalName, color: finalColor }] } : s));
+    setSchedule(prev => ({ ...prev, [storeId]: { ...prev[storeId], [newId]: buildPattern(pattern || 'descanso') } }));
+    showToast(`${finalName} agregado a la tienda`);
   };
 
   const removePerson = (storeId, personId) => {
@@ -196,6 +222,11 @@ export default function App() {
     });
   };
 
+  const applyPattern = (storeId, personId, patternId) => {
+    setSchedule(prev => ({ ...prev, [storeId]: { ...prev[storeId], [personId]: buildPattern(patternId) } }));
+    showToast('Plantilla aplicada');
+  };
+
   const addWeekToBatch = () => {
     if (!startDate || !endDate) { showToast('Selecciona las fechas', 'error'); return; }
     const weekData = {
@@ -204,7 +235,7 @@ export default function App() {
       scheduleSnapshot: JSON.parse(JSON.stringify(schedule))
     };
     setWeekBatch(prev => [...prev, weekData]);
-    showToast('Semana guardada con éxito');
+    showToast('Semana guardada en la lista');
   };
 
   const handleExport = async () => {
@@ -257,7 +288,7 @@ export default function App() {
   const handleClearBatch = () => setWeekBatch([]);
 
   const handleResetApp = () => {
-    if (window.confirm('¿Restaurar la app por completo? Se perderán los datos.')) {
+    if (window.confirm('¿Restaurar la app por completo? Se perderán todos los datos.')) {
       setStores(INITIAL_STORES);
       setSchedule(buildInitialSchedule(INITIAL_STORES));
       setWeekBatch([]);
@@ -266,100 +297,141 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f0f4f8] text-slate-900 font-sans p-4 md:p-8">
-      <div className="max-w-[1400px] mx-auto space-y-6">
-
-        <header className="bg-white rounded-[24px] shadow-sm border border-slate-200 p-6 md:p-8">
-          <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
-            <div className="relative">
-              <div className="flex flex-col mb-1 relative">
-                <button onClick={handleLogout} className="absolute -top-5 left-0 text-slate-400 hover:text-slate-600 flex items-center gap-1.5 text-[11px] font-bold transition-colors">
-                  <LogOut size={12} strokeWidth={3}/> Cerrar sesión
-                </button>
-                <h1 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight mt-2">
-                  Horarios <span className="text-[#d50000]">Tiendas Rojas</span>
-                </h1>
-              </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <p className="text-slate-500 text-sm font-medium">Panel de gestión y reportes semanales</p>
-                <SyncBadge status={syncStatus} />
-              </div>
+    <div translate="no" className="min-h-screen bg-[#f0f4f8] text-slate-900 font-sans">
+      <header className="sticky top-0 z-40 bg-white/85 backdrop-blur-xl border-b border-slate-200">
+        <div className="max-w-[1400px] mx-auto px-4 md:px-8 h-[68px] flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#d50000] to-red-800 flex items-center justify-center shadow-md shadow-red-900/20 shrink-0">
+              <Store size={21} className="text-white" strokeWidth={2.5} />
             </div>
-
-            <div className="flex flex-col items-stretch xl:items-end gap-3 w-full xl:w-auto">
-              <div className="flex flex-col sm:flex-row items-center gap-4 w-full xl:w-auto">
-                <DateRangePicker startDate={startDate} endDate={endDate} onDateChange={handleDateChange} />
-
-                <button
-                  onClick={() => setShowGlobalPreview(true)}
-                  className="w-full sm:w-auto bg-slate-800 hover:bg-slate-900 text-white px-6 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md active:scale-95"
-                >
-                  <TableProperties size={18} strokeWidth={2.5} /> Ver reporte global
-                </button>
-
-                <button
-                  onClick={addWeekToBatch}
-                  className="w-full sm:w-auto bg-[#d50000] hover:bg-red-700 text-white px-6 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md active:scale-95"
-                >
-                  <Plus size={18} strokeWidth={3} /> Agregar semana
-                </button>
-              </div>
+            <div className="min-w-0">
+              <h1 className="font-black text-slate-900 leading-tight truncate text-base md:text-lg">
+                Horarios <span className="text-[#d50000]">Tiendas Rojas</span>
+              </h1>
+              <SyncBadge status={syncStatus} />
             </div>
           </div>
-        </header>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowGlobalPreview(true)}
+              className="bg-slate-900 hover:bg-black text-white px-4 md:px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-md active:scale-95"
+            >
+              <TableProperties size={17} strokeWidth={2.5} />
+              <span className="hidden sm:inline">Reporte global</span>
+            </button>
+            <button
+              onClick={handleLogout}
+              title="Cerrar sesión"
+              className="p-2.5 rounded-xl border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <LogOut size={18} strokeWidth={2.5} />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-[1400px] mx-auto p-4 md:p-8 space-y-6">
+        <section className="bg-white rounded-[24px] shadow-sm border border-slate-200 p-5 md:p-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <StepCard number={1} title="Elige la semana">
+              <DateRangePicker startDate={startDate} endDate={endDate} onDateChange={handleDateChange} />
+            </StepCard>
+            <StepCard number={2} title="Arma los horarios">
+              <p className="text-xs font-semibold text-slate-500 leading-relaxed">
+                Toca cualquier día de la tabla para cambiar el turno. Toca el nombre de una persona para editarla o usar una plantilla.
+              </p>
+            </StepCard>
+            <StepCard number={3} title="Guarda la semana">
+              <button
+                onClick={addWeekToBatch}
+                className="w-full bg-[#d50000] hover:bg-red-700 text-white px-5 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md shadow-red-600/20 active:scale-95"
+              >
+                <Plus size={18} strokeWidth={3} /> Guardar en la lista
+              </button>
+            </StepCard>
+          </div>
+        </section>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatCard icon={<Users size={20} strokeWidth={2.5} />} label="Personal" value={totalPeople} />
+          <StatCard icon={<Clock size={20} strokeWidth={2.5} />} label="Horas programadas" value={totalHours} />
+          <StatCard icon={<CalendarCheck size={20} strokeWidth={2.5} />} label="Semanas guardadas" value={weekBatch.length} />
+        </div>
 
         <div className="space-y-6">
           {stores.map(store => (
-            <StoreCard key={store.id} store={store} schedule={schedule} onAddPerson={addPerson} onRemovePerson={removePerson} onUpdatePersonName={updatePersonName} onUpdatePersonColor={updatePersonColor} onUpdateShift={updateShift} />
+            <StoreCard
+              key={store.id}
+              store={store}
+              schedule={schedule}
+              onAddPerson={addPerson}
+              onRemovePerson={removePerson}
+              onUpdatePersonName={updatePersonName}
+              onUpdatePersonColor={updatePersonColor}
+              onUpdateShift={updateShift}
+              onApplyPattern={applyPattern}
+            />
           ))}
         </div>
 
-        <div className="bg-white rounded-[24px] shadow-sm border border-slate-200 p-6 md:p-8">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Semanas listas para exportar</h3>
-            <button onClick={handleResetApp} className="text-xs text-slate-400 hover:text-slate-700 font-bold transition-colors flex items-center gap-1.5">
+        <section className="bg-white rounded-[24px] shadow-sm border border-slate-200 p-5 md:p-8">
+          <div className="flex justify-between items-center mb-6 gap-4">
+            <div>
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Semanas listas para exportar</h3>
+              <p className="text-xs font-semibold text-slate-400 mt-1">Cada semana se exporta como una hoja distinta en el Excel.</p>
+            </div>
+            <button onClick={handleResetApp} className="text-xs text-slate-400 hover:text-red-600 font-bold transition-colors flex items-center gap-1.5 shrink-0">
               <RotateCcw size={14} strokeWidth={3} /> Reiniciar app
             </button>
           </div>
 
           <div className="space-y-3 mb-8">
             {weekBatch.length === 0 ? (
-              <div className="text-slate-400 text-sm py-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 font-bold">
-                No hay semanas guardadas en la lista.
+              <div className="text-slate-400 text-sm py-10 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 font-bold">
+                Aún no hay semanas guardadas. Usa el paso 3 de arriba.
               </div>
             ) : (
               weekBatch.map((w, i) => (
                 <div key={i} className="flex justify-between items-center bg-white border border-slate-200 px-5 py-4 rounded-2xl shadow-sm hover:border-slate-300 transition-colors">
                   <span className="text-sm font-bold text-slate-800 flex items-center gap-3">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#d50000] shrink-0"></span>{w.label}
+                    <span className="w-7 h-7 rounded-full bg-red-50 text-[#d50000] text-xs font-black flex items-center justify-center shrink-0">{i + 1}</span>
+                    {w.label}
                   </span>
-                  <button onClick={() => handleRemoveFromBatch(i)} className="p-2 text-slate-400 hover:bg-slate-100 hover:text-[#d50000] rounded-xl transition-colors">
-                    <Trash2 size={18} strokeWidth={2.5}/>
+                  <button onClick={() => handleRemoveFromBatch(i)} className="p-2 text-slate-400 hover:bg-red-50 hover:text-[#d50000] rounded-xl transition-colors">
+                    <Trash2 size={18} strokeWidth={2.5} />
                   </button>
                 </div>
               ))
             )}
           </div>
 
-          <div className="flex flex-col sm:flex-row flex-wrap gap-4 pt-6 border-t border-slate-100">
-            <button onClick={handleExport} disabled={isExporting || weekBatch.length === 0} className="bg-slate-900 hover:bg-black disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white px-8 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md active:scale-95">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-3 pt-6 border-t border-slate-100">
+            <button
+              onClick={handleExport}
+              disabled={isExporting || weekBatch.length === 0}
+              className="bg-slate-900 hover:bg-black disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white px-8 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md active:scale-95"
+            >
               <Download size={18} strokeWidth={3} /> {isExporting ? 'Procesando...' : 'Exportar a Excel'}
             </button>
-            <button onClick={handleClearBatch} disabled={weekBatch.length === 0} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 disabled:opacity-50 px-6 py-3.5 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95">
+            <button
+              onClick={handleClearBatch}
+              disabled={weekBatch.length === 0}
+              className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 disabled:opacity-50 px-6 py-3.5 rounded-xl text-sm font-bold transition-all active:scale-95"
+            >
               Vaciar lista
             </button>
-            <div className="flex gap-4 sm:ml-auto">
-              <button onClick={handleExportJson} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 px-5 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95">
+            <div className="flex gap-3 sm:ml-auto">
+              <button onClick={handleExportJson} className="flex-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 px-5 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all active:scale-95">
                 <FileJson size={18} strokeWidth={2.5} /> Respaldo JSON
               </button>
-              <label className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 px-5 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-sm active:scale-95 cursor-pointer">
+              <label className="flex-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 px-5 py-3.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer">
                 <Upload size={18} strokeWidth={2.5} /> Importar JSON
                 <input type="file" accept="application/json,.json" onChange={handleImportJson} className="hidden" />
               </label>
             </div>
           </div>
-        </div>
-      </div>
+        </section>
+      </main>
 
       <PreviewExcel isOpen={showGlobalPreview} onClose={() => setShowGlobalPreview(false)} stores={stores} schedule={schedule} />
       <Toast toast={toast} />
