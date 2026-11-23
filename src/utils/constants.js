@@ -1,4 +1,4 @@
-import { Sun, Sunset, Briefcase, BedDouble, Clock, CalendarOff } from 'lucide-react';
+import { Sun, Sunset, Briefcase, BedDouble, Clock, CalendarOff, Plane } from 'lucide-react';
 
 export const DAYS = ['LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO', 'DOMINGO'];
 
@@ -62,6 +62,7 @@ export function getShiftDetails(type, currentStart, currentEnd, currentBreak) {
     case 'completo': return { start: 0, end: 12, breakHour: Number.isInteger(currentBreak) ? currentBreak : 5 };
     case 'descansa': return { start: -1, end: -1 };
     case 'sin_turno': return { start: -1, end: -1 };
+    case 'vacaciones': return { start: -1, end: -1 };
     case 'personalizado': {
       const start = parseInt(currentStart ?? 0, 10);
       const end = parseInt(currentEnd ?? 6, 10);
@@ -77,7 +78,7 @@ export function getShiftDetails(type, currentStart, currentEnd, currentBreak) {
 }
 
 export function getShiftHours(sched) {
-  if (!sched || sched.type === 'descansa' || sched.type === 'sin_turno') return 0;
+  if (!sched || sched.type === 'descansa' || sched.type === 'sin_turno' || sched.type === 'vacaciones') return 0;
   const { start, end } = sched.type === 'personalizado' ? sched : getShiftDetails(sched.type);
   if (start < 0 || end < start) return 0;
   const rawHours = end - start + 1;
@@ -102,6 +103,7 @@ export const SHIFT_TYPES = [
   { id: 'tarde2', label: 'Tarde 2', icon: Sunset, getRange: () => shiftRangeLabel('tarde2') },
   { id: 'completo', label: 'Día completo', icon: Briefcase, getRange: () => shiftRangeLabel('completo') },
   { id: 'descansa', label: 'Descanso', icon: BedDouble, getRange: () => 'Día libre' },
+  { id: 'vacaciones', label: 'Vacaciones', icon: Plane, getRange: () => 'De vacaciones' },
   { id: 'sin_turno', label: 'Sin turno', icon: CalendarOff, getRange: () => 'No labora (Auxiliar)' },
   { id: 'personalizado', label: 'Personalizado', icon: Clock, getRange: () => 'Elegir horas' }
 ];

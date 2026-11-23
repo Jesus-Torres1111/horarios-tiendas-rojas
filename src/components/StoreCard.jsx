@@ -43,10 +43,10 @@ export default function StoreCard({
   const calculateTotalHours = (personId) =>
     DAYS.reduce((total, day) => total + getShiftHours(schedule[store.id]?.[personId]?.[day]), 0);
 
-  const countWorking = (day) =>
+const countWorking = (day) =>
     store.people.filter(p => {
       const t = getSched(p.id, day).type;
-      return t !== 'descansa' && t !== 'sin_turno';
+      return t !== 'descansa' && t !== 'sin_turno' && t !== 'vacaciones';
     }).length;
 
   const storeHours = store.people.reduce((sum, p) => sum + calculateTotalHours(p.id), 0);

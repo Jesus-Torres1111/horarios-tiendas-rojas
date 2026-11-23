@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { DAYS, getShiftHours, getWeekDates } from './constants';
+import { DAYS, getShiftHours, getWeekDates, getContrastColorHex } from './constants';
 import { excelCellShiftText } from './format';
 
 const BLACK = 'FF000000';
@@ -11,6 +11,7 @@ const PURPLE = 'FF7030A0';
 const DEFAULT_SHIFT = { type: 'mañana', start: 0, end: 6 };
 
 const solid = (argb) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+const toArgb = (color) => 'FF' + color.replace('#', '').toUpperCase();
 const edge = { style: 'thin', color: { argb: BLACK } };
 const thinBorder = { top: edge, left: edge, bottom: edge, right: edge };
 
@@ -25,25 +26,20 @@ function uniqueSheetName(wb, label) {
   return name;
 }
 
-function getCellStyleByType(type) {
-  switch (type) {
-    case 'descansa':
-      return { fill: 'FFFF0000', fontColor: WHITE };
-    case 'sin_turno':
-      return { fill: 'FFF1F5F9', fontColor: 'FF94A3B8' };
-    case 'mañana':
-      return { fill: 'FFFFF2CC', fontColor: BLACK };
-    case 'tarde':
-      return { fill: 'FFFCE4D6', fontColor: BLACK };
-    case 'tarde2':
-      return { fill: 'FFD9E1F2', fontColor: BLACK };
-    case 'completo':
-      return { fill: 'FF99FFEB', fontColor: BLACK };
-    case 'personalizado':
-      return { fill: 'FFE2EFDA', fontColor: BLACK };
-    default:
-      return { fill: WHITE, fontColor: BLACK };
+function getCellStyleByType(type, personColor) {
+  if (type === 'descansa') {
+    return { fill: 'FFFF0000', fontColor: WHITE };
   }
+  if (type === 'vacaciones') {
+    return { fill: 'FFCCE5FF', fontColor: 'FF004085' };
+  }
+  if (type === 'sin_turno') {
+    return { fill: 'FFF1F5F9', fontColor: 'FF94A3B8' };
+  }
+  return {
+    fill: toArgb(personColor),
+    fontColor: getContrastColorHex(personColor)
+  };
 }
 
 export async function generateExcel(batch, currentLabel, currentStores, currentSchedule, currentStartDate) {
@@ -62,7 +58,6 @@ export async function generateExcel(batch, currentLabel, currentStores, currentS
 
     const weekDates = getWeekDates(week.startDateSnapshot || currentStartDate);
 
-    // Encabezado filas 1 y 2
     ws.mergeCells(1, 1, 2, 1);
     const nameHeader = ws.getCell(1, 1);
     nameHeader.value = 'Nombres';
@@ -103,7 +98,6 @@ export async function generateExcel(batch, currentLabel, currentStores, currentS
     week.storesSnapshot.forEach(store => {
       if (!store.people || store.people.length === 0) return;
 
-      // Fila separadora con el nombre de la tienda
       const storeCell = ws.getCell(currentRow, 1);
       storeCell.value = store.name;
       storeCell.fill = solid(STORE_BANNER);
@@ -119,11 +113,14 @@ export async function generateExcel(batch, currentLabel, currentStores, currentS
       ws.getRow(currentRow).height = 22;
       currentRow += 1;
 
-      // Filas de personal
       store.people.forEach(person => {
+        const personFill = toArgb(person.color);
+        const personFontColor = getContrastColorHex(person.color);
+
         const personCell = ws.getCell(currentRow, 1);
         personCell.value = person.name;
-        personCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: BLACK } };
+        personCell.fill = solid(personFill);
+        personCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: personFontColor } };
         personCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
         personCell.border = thinBorder;
 
@@ -134,7 +131,7 @@ export async function generateExcel(batch, currentLabel, currentStores, currentS
           const sched = week.scheduleSnapshot?.[store.id]?.[person.id]?.[day] || DEFAULT_SHIFT;
           totalHours += getShiftHours(sched);
 
-          const style = getCellStyleByType(sched.type);
+          const style = getCellStyleByType(sched.type, person.color);
           const cell = ws.getCell(currentRow, col);
           cell.value = excelCellShiftText(sched);
           cell.fill = solid(style.fill);
@@ -145,8 +142,8 @@ export async function generateExcel(batch, currentLabel, currentStores, currentS
 
         const totalCell = ws.getCell(currentRow, 9);
         totalCell.value = totalHours;
-        totalCell.fill = solid('FFF8FAFC');
-        totalCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: BLACK } };
+        totalCell.fill = solid(personFill);
+        totalCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: personFontColor } };
         totalCell.alignment = { horizontal: 'center', vertical: 'middle' };
         totalCell.border = thinBorder;
 

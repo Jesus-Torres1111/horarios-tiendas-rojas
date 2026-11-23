@@ -1,29 +1,38 @@
 import React, { useEffect } from 'react';
 import { X, TableProperties } from 'lucide-react';
-import { DAYS, getShiftHours, getWeekDates } from '../utils/constants';
+import { DAYS, getShiftHours, getWeekDates, getContrastColorHex } from '../utils/constants';
 import { excelCellShiftText } from '../utils/format';
 
 const DEFAULT_SHIFT = { type: 'mañana', start: 0, end: 6 };
 
-function getHorizontalCellStyle(type) {
-  switch (type) {
-    case 'descansa':
-      return 'bg-[#ff0000] text-white font-black';
-    case 'sin_turno':
-      return 'bg-slate-100 text-slate-400 font-bold';
-    case 'mañana':
-      return 'bg-[#fff2cc] text-slate-900 font-bold';
-    case 'tarde':
-      return 'bg-[#fce4d6] text-slate-900 font-bold';
-    case 'tarde2':
-      return 'bg-[#d9e1f2] text-slate-900 font-bold';
-    case 'completo':
-      return 'bg-[#99ffeb] text-slate-900 font-bold';
-    case 'personalizado':
-      return 'bg-[#e2efda] text-slate-900 font-bold';
-    default:
-      return 'bg-white text-slate-900 font-bold';
+function toCssContrastColor(hexColor) {
+  const argb = getContrastColorHex(hexColor);
+  return argb === 'FFFFFFFF' ? '#FFFFFF' : '#000000';
+}
+
+function getCellVisual(type, personColor) {
+  if (type === 'descansa') {
+    return {
+      style: { backgroundColor: '#FF0000', color: '#FFFFFF' },
+      className: 'font-black'
+    };
   }
+  if (type === 'vacaciones') {
+    return {
+      style: { backgroundColor: '#CCE5FF', color: '#004085' },
+      className: 'font-black'
+    };
+  }
+  if (type === 'sin_turno') {
+    return {
+      style: { backgroundColor: '#F1F5F9', color: '#94A3B8' },
+      className: 'font-bold'
+    };
+  }
+  return {
+    style: { backgroundColor: personColor, color: toCssContrastColor(personColor) },
+    className: 'font-bold'
+  };
 }
 
 export default function PreviewExcel({ isOpen, onClose, store, stores, schedule, startDate }) {
@@ -64,11 +73,11 @@ export default function PreviewExcel({ isOpen, onClose, store, stores, schedule,
                   <th rowSpan={2} className="border border-black bg-white text-slate-900 px-6 py-3 text-base font-black tracking-wide min-w-[210px]">
                     Nombres
                   </th>
-{DAYS.map(day => (
-  <th key={day} className="border border-black bg-[#b4c6e7] text-slate-900 px-4 py-1.5 text-xs font-black uppercase tracking-wider min-w-[165px]">
-    {day}
-  </th>
-))}
+                  {DAYS.map(day => (
+                    <th key={day} className="border border-black bg-[#b4c6e7] text-slate-900 px-4 py-1.5 text-xs font-black uppercase tracking-wider min-w-[165px]">
+                      {day}
+                    </th>
+                  ))}
                   <th rowSpan={2} className="border border-black bg-[#7030A0] text-white px-4 py-3 text-xs font-black uppercase tracking-wider min-w-[95px]">
                     Horas Prog.
                   </th>
@@ -96,29 +105,37 @@ export default function PreviewExcel({ isOpen, onClose, store, stores, schedule,
 
                       {currentStore.people.map(p => {
                         let totalHours = 0;
+                        const nameTextColor = toCssContrastColor(p.color);
                         return (
                           <tr key={p.id}>
-                            <td className="border border-black px-3 py-2 text-xs font-black uppercase text-slate-900 whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: p.color }} />
-                                <span>{p.name}</span>
-                              </div>
+                            <td
+                              className="border border-black px-3 py-2 text-xs font-black uppercase whitespace-nowrap"
+                              style={{ backgroundColor: p.color, color: nameTextColor }}
+                            >
+                              {p.name}
                             </td>
 
                             {DAYS.map(day => {
                               const sched = schedule[currentStore.id]?.[p.id]?.[day] || DEFAULT_SHIFT;
                               totalHours += getShiftHours(sched);
                               const cellText = excelCellShiftText(sched);
-                              const cellClass = getHorizontalCellStyle(sched.type);
+                              const visual = getCellVisual(sched.type, p.color);
 
                               return (
-                                <td key={day} className={`border border-black px-2 py-2 text-center text-[11px] leading-snug whitespace-pre-line ${cellClass}`}>
+                                <td
+                                  key={day}
+                                  style={visual.style}
+                                  className={`border border-black px-2 py-2 text-center text-[11px] leading-snug whitespace-pre-line ${visual.className}`}
+                                >
                                   {cellText}
                                 </td>
                               );
                             })}
 
-                            <td className="border border-black px-2 py-2 text-center text-xs font-black bg-slate-50 text-slate-900">
+                            <td
+                              style={{ backgroundColor: p.color, color: nameTextColor }}
+                              className="border border-black px-2 py-2 text-center text-xs font-black"
+                            >
                               {totalHours} h
                             </td>
                           </tr>

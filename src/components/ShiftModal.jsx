@@ -244,11 +244,13 @@ export default function ShiftModal({
                   : { type: opt.id };
                 const rangeText = opt.id === 'descansa'
                   ? 'Día libre'
-                  : opt.id === 'sin_turno'
-                    ? 'No labora'
-                    : opt.id === 'personalizado' && !isCustom
-                      ? 'Tú eliges las horas'
-                      : rangeLabel(preview);
+                  : opt.id === 'vacaciones'
+                    ? 'De vacaciones'
+                    : opt.id === 'sin_turno'
+                      ? 'No labora'
+                      : opt.id === 'personalizado' && !isCustom
+                        ? 'Tú eliges las horas'
+                        : rangeLabel(preview);
                 return (
                   <button
                     key={opt.id}
