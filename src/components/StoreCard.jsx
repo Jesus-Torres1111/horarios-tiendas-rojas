@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Trash2, Plus, Users, TableProperties, Store as StoreIcon, Pencil } from 'lucide-react';
 import { DAYS, DEFAULT_COLORS, getShiftHours } from '../utils/constants';
-import { SHORT_DAYS, SHIFT_THEME, SHIFT_NAMES, rangeLabel } from '../utils/format';
+import { SHORT_DAYS, SHIFT_THEME, SHIFT_NAMES, rangeLabel, breakBadgeLabel } from '../utils/format';
 import HourBar from './HourBar';
 import ShiftModal from './ShiftModal';
 import AddPersonModal from './AddPersonModal';
@@ -12,14 +12,18 @@ const WEEKLY_REFERENCE_HOURS = 48;
 
 function ShiftCell({ sched, onClick }) {
   const theme = SHIFT_THEME[sched.type] || SHIFT_THEME['mañana'];
+  const breakText = breakBadgeLabel(sched);
   return (
     <button
       onClick={onClick}
-      className={`w-full min-h-[66px] px-2.5 py-2 rounded-xl border-2 flex flex-col justify-between gap-2 text-left transition-all active:scale-[0.97] ${theme.cell}`}
+      className={`w-full min-h-[70px] px-2.5 py-2 rounded-xl border-2 flex flex-col justify-between gap-1.5 text-left transition-all active:scale-[0.97] ${theme.cell}`}
     >
       <div>
-        <div className="text-[10px] font-black uppercase tracking-wider leading-none">{SHIFT_NAMES[sched.type]}</div>
-        <div className="text-[10px] font-semibold opacity-80 mt-1 leading-tight">{rangeLabel(sched)}</div>
+        <div className="text-[10px] font-black uppercase tracking-wider leading-none">{SHIFT_NAMES[sched.type] || 'Mañana'}</div>
+        <div className="text-[10px] font-semibold opacity-85 mt-1 leading-tight">{rangeLabel(sched)}</div>
+        {breakText && (
+          <div className="text-[9px] font-black opacity-95 mt-0.5 leading-tight underline decoration-dotted">{breakText}</div>
+        )}
       </div>
       <HourBar sched={sched} />
     </button>
@@ -27,7 +31,7 @@ function ShiftCell({ sched, onClick }) {
 }
 
 export default function StoreCard({
-  store, schedule, onAddPerson, onRemovePerson, onUpdatePersonName, onUpdatePersonColor, onUpdateShift, onApplyPattern
+  store, schedule, startDate, onAddPerson, onRemovePerson, onUpdatePersonName, onUpdatePersonColor, onUpdateShift, onApplyPattern
 }) {
   const [activeModal, setActiveModal] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -40,7 +44,10 @@ export default function StoreCard({
     DAYS.reduce((total, day) => total + getShiftHours(schedule[store.id]?.[personId]?.[day]), 0);
 
   const countWorking = (day) =>
-    store.people.filter(p => getSched(p.id, day).type !== 'descansa').length;
+    store.people.filter(p => {
+      const t = getSched(p.id, day).type;
+      return t !== 'descansa' && t !== 'sin_turno';
+    }).length;
 
   const storeHours = store.people.reduce((sum, p) => sum + calculateTotalHours(p.id), 0);
 
@@ -126,7 +133,7 @@ export default function StoreCard({
               <div className="flex bg-slate-50 border-b border-slate-200">
                 <div className="w-[200px] shrink-0 p-4 sticky left-0 z-20 bg-slate-50 border-r border-slate-200 font-black text-slate-400 uppercase text-[10px] tracking-widest">Personal</div>
                 {DAYS.map(day => (
-                  <div key={day} className="flex-1 min-w-[132px] p-4 text-center font-black text-slate-500 uppercase text-[11px] tracking-widest border-r border-slate-200">{SHORT_DAYS[day]}</div>
+                  <div key={day} className="flex-1 min-w-[136px] p-4 text-center font-black text-slate-500 uppercase text-[11px] tracking-widest border-r border-slate-200">{SHORT_DAYS[day]}</div>
                 ))}
                 <div className="w-[100px] shrink-0 p-4 text-center font-black text-slate-400 uppercase text-[10px] tracking-widest">Horas</div>
               </div>
@@ -160,7 +167,7 @@ export default function StoreCard({
                       </div>
 
                       {DAYS.map(day => (
-                        <div key={day} className="flex-1 min-w-[132px] p-2 border-r border-slate-100 flex items-center">
+                        <div key={day} className="flex-1 min-w-[136px] p-2 border-r border-slate-100 flex items-center">
                           <ShiftCell sched={getSched(person.id, day)} onClick={() => openModal(person, day)} />
                         </div>
                       ))}
@@ -183,7 +190,7 @@ export default function StoreCard({
                 {DAYS.map(day => {
                   const n = countWorking(day);
                   return (
-                    <div key={day} className="flex-1 min-w-[132px] p-2 border-r border-slate-200 flex items-center justify-center">
+                    <div key={day} className="flex-1 min-w-[136px] p-2 border-r border-slate-200 flex items-center justify-center">
                       <span className={`px-3 py-1 rounded-full border text-[11px] font-black ${coverageStyle(n)}`}>
                         {n}/{store.people.length} trabajan
                       </span>
@@ -229,6 +236,7 @@ export default function StoreCard({
                   {DAYS.map(day => {
                     const sched = getSched(person.id, day);
                     const theme = SHIFT_THEME[sched.type] || SHIFT_THEME['mañana'];
+                    const breakText = breakBadgeLabel(sched);
                     return (
                       <button
                         key={day}
@@ -237,8 +245,10 @@ export default function StoreCard({
                       >
                         <span className="w-9 text-[11px] font-black opacity-70 text-left">{SHORT_DAYS[day]}</span>
                         <div className="flex-1 text-left min-w-0">
-                          <div className="text-[11px] font-black uppercase tracking-wide leading-none">{SHIFT_NAMES[sched.type]}</div>
-                          <div className="text-[10px] font-semibold opacity-80 mt-1">{rangeLabel(sched)}</div>
+                          <div className="text-[11px] font-black uppercase tracking-wide leading-none">{SHIFT_NAMES[sched.type] || 'Mañana'}</div>
+                          <div className="text-[10px] font-semibold opacity-80 mt-1">
+                            {rangeLabel(sched)}{breakText ? ` · ${breakText}` : ''}
+                          </div>
                         </div>
                         <HourBar sched={sched} className="w-20 shrink-0" />
                       </button>
@@ -251,7 +261,7 @@ export default function StoreCard({
         </>
       )}
 
-      <PreviewExcel isOpen={showPreview} onClose={() => setShowPreview(false)} store={store} schedule={schedule} />
+      <PreviewExcel isOpen={showPreview} onClose={() => setShowPreview(false)} store={store} schedule={schedule} startDate={startDate} />
 
       {showAdd && (
         <AddPersonModal
@@ -273,7 +283,7 @@ export default function StoreCard({
           day={activeModal.day}
           isBulk={activeModal.isBulk}
           currentShift={getSched(activeModal.personId, activeModal.day)}
-          onSave={(type, start, end, selectedDays) => onUpdateShift(store.id, activeModal.personId, selectedDays, type, start, end)}
+          onSave={(type, start, end, selectedDays, breakHour) => onUpdateShift(store.id, activeModal.personId, selectedDays, type, start, end, breakHour)}
           onUpdateName={(newName) => onUpdatePersonName(store.id, activeModal.personId, newName)}
           onUpdateColor={(newColor) => onUpdatePersonColor(store.id, activeModal.personId, newColor)}
           onApplyPattern={(patternId) => onApplyPattern(store.id, activeModal.personId, patternId)}

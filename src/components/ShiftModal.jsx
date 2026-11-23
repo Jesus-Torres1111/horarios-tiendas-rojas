@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, Check, Clock, Sparkles } from 'lucide-react';
-import { DAYS, HOURS, SHIFT_TYPES, getShiftDetails, getShiftHours } from '../utils/constants';
+import { X, Check, Clock, Sparkles, Coffee } from 'lucide-react';
+import { DAYS, HOURS, SHIFT_TYPES, BREAK_OPTIONS, getShiftDetails, getShiftHours, isFullDayShift, getBreakMeta } from '../utils/constants';
 import { SHORT_DAYS, SHIFT_NAMES, PATTERNS, PATTERN_ICONS, hourLabel, rangeLabel } from '../utils/format';
 import HourBar from './HourBar';
 
@@ -32,6 +32,9 @@ export default function ShiftModal({
       shift.start = 0;
       shift.end = 6;
     }
+    if (isFullDayShift(shift.type, shift.start, shift.end) && !Number.isInteger(shift.breakHour)) {
+      shift.breakHour = 5;
+    }
     return shift;
   });
   const [localName, setLocalName] = useState(personName);
@@ -48,6 +51,7 @@ export default function ShiftModal({
   if (!isOpen) return null;
 
   const isCustom = localShift.type === 'personalizado';
+  const hasLunchBreak = isFullDayShift(localShift.type, localShift.start, localShift.end);
   const willSaveShift = !isBulk || shiftTouched;
   const totalHours = getShiftHours(localShift);
 
@@ -66,21 +70,50 @@ export default function ShiftModal({
     setLocalShift(prev => {
       if (id === 'personalizado') {
         const valid = prev.start >= 0 && prev.end >= prev.start;
-        return { type: id, start: valid ? prev.start : 0, end: valid ? prev.end : 6 };
+        const start = valid ? prev.start : 0;
+        const end = valid ? prev.end : 6;
+        const full = isFullDayShift('personalizado', start, end);
+        return {
+          type: id,
+          start,
+          end,
+          ...(full ? { breakHour: Number.isInteger(prev.breakHour) ? prev.breakHour : 5 } : {})
+        };
       }
-      const details = getShiftDetails(id);
-      return { type: id, start: details.start, end: details.end };
+      const details = getShiftDetails(id, undefined, undefined, prev.breakHour);
+      return { ...details, type: id };
     });
   };
 
   const pickHour = (i) => {
     setShiftTouched(true);
     setLocalShift(prev => {
-      if (picking === 'start') return { ...prev, start: i, end: i };
-      if (i < prev.start) return { ...prev, start: i, end: prev.start };
-      return { ...prev, end: i };
+      let nextStart;
+      let nextEnd;
+      if (picking === 'start') {
+        nextStart = i;
+        nextEnd = i;
+      } else if (i < prev.start) {
+        nextStart = i;
+        nextEnd = prev.start;
+      } else {
+        nextStart = prev.start;
+        nextEnd = i;
+      }
+      const full = isFullDayShift('personalizado', nextStart, nextEnd);
+      return {
+        ...prev,
+        start: nextStart,
+        end: nextEnd,
+        breakHour: full ? (Number.isInteger(prev.breakHour) ? prev.breakHour : 5) : undefined
+      };
     });
     setPicking(p => (p === 'start' ? 'end' : 'start'));
+  };
+
+  const selectBreakHour = (breakIndex) => {
+    setShiftTouched(true);
+    setLocalShift(prev => ({ ...prev, breakHour: breakIndex }));
   };
 
   const saveIdentity = () => {
@@ -90,7 +123,15 @@ export default function ShiftModal({
   };
 
   const handleConfirm = () => {
-    if (willSaveShift) onSave(localShift.type, localShift.start, localShift.end, selectedDays);
+    if (willSaveShift) {
+      onSave(
+        localShift.type,
+        localShift.start,
+        localShift.end,
+        selectedDays,
+        hasLunchBreak ? (localShift.breakHour ?? 5) : undefined
+      );
+    }
     saveIdentity();
     onClose();
   };
@@ -101,8 +142,9 @@ export default function ShiftModal({
     onClose();
   };
 
+  const breakSummary = hasLunchBreak ? ` · Refrig. ${getBreakMeta(localShift.breakHour).short}` : '';
   const summary = willSaveShift
-    ? `${selectedDays.length} ${selectedDays.length === 1 ? 'día' : 'días'} · ${SHIFT_NAMES[localShift.type]} · ${rangeLabel(localShift)}${totalHours > 0 ? ` · ${totalHours} h` : ''}`
+    ? `${selectedDays.length} ${selectedDays.length === 1 ? 'día' : 'días'} · ${SHIFT_NAMES[localShift.type]} · ${rangeLabel(localShift)}${breakSummary}${totalHours > 0 ? ` · ${totalHours} h` : ''}`
     : 'Solo se guardarán el nombre y el color';
 
   return (
@@ -202,9 +244,11 @@ export default function ShiftModal({
                   : { type: opt.id };
                 const rangeText = opt.id === 'descansa'
                   ? 'Día libre'
-                  : opt.id === 'personalizado' && !isCustom
-                    ? 'Tú eliges las horas'
-                    : rangeLabel(preview);
+                  : opt.id === 'sin_turno'
+                    ? 'No labora'
+                    : opt.id === 'personalizado' && !isCustom
+                      ? 'Tú eliges las horas'
+                      : rangeLabel(preview);
                 return (
                   <button
                     key={opt.id}
@@ -257,6 +301,35 @@ export default function ShiftModal({
                     Sale <span className="text-slate-900 font-black">{hourLabel(localShift.end, 'end')}</span>
                   </div>
                   <span className="text-xs font-black text-violet-700">{totalHours} h</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {hasLunchBreak && (
+            <div className="fade-in">
+              <SectionTitle number={isCustom ? 4 : 3}>
+                <span className="inline-flex items-center gap-1.5"><Coffee size={13} strokeWidth={3} className="text-amber-600" /> Hora de refrigerio (1h descontada)</span>
+              </SectionTitle>
+              <div className="rounded-2xl bg-amber-50/70 border border-amber-200 p-4 space-y-3">
+                <p className="text-xs font-bold text-amber-900">
+                  Jornada completa detectada ({totalHours} h efectivas). Elige la hora de almuerzo:
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {BREAK_OPTIONS.map(opt => {
+                    const active = (localShift.breakHour ?? 5) === opt.index;
+                    return (
+                      <button
+                        key={opt.index}
+                        type="button"
+                        onClick={() => selectBreakHour(opt.index)}
+                        className={`px-3.5 py-2.5 rounded-xl border-2 text-xs font-black transition-all flex items-center justify-between ${active ? 'bg-amber-600 border-amber-600 text-white shadow-sm' : 'bg-white border-amber-200 text-amber-900 hover:border-amber-400'}`}
+                      >
+                        <span>{opt.label}</span>
+                        {active && <Check size={14} strokeWidth={3} />}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

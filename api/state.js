@@ -1,4 +1,5 @@
 import process from 'node:process';
+
 const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
 const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 const STATE_KEY = 'rojas-state';
@@ -16,6 +17,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       const response = await fetch(`${REDIS_URL}/get/${STATE_KEY}`, { headers });
+      if (!response.ok) return res.status(502).json({ error: 'db_read_failed' });
       const json = await response.json();
       const data = json.result ? JSON.parse(json.result) : null;
       return res.status(200).json({ data });

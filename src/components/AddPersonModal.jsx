@@ -132,4 +132,4 @@ export default function AddPersonModal({ onClose, onCreate, storeName, suggested
       </form>
     </div>
   );
-}   
+}

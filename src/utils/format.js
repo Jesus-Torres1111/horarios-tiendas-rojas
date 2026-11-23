@@ -1,5 +1,5 @@
-import { Sun, Sunset, Repeat, BedDouble } from 'lucide-react';
-import { DAYS, getShiftDetails } from './constants';
+import { Sun, Sunset, Repeat, BedDouble, UserCheck } from 'lucide-react';
+import { DAYS, getShiftDetails, isFullDayShift, getBreakMeta } from './constants';
 
 export const SHORT_DAYS = {
   LUNES: 'LUN',
@@ -17,6 +17,7 @@ export const SHIFT_NAMES = {
   tarde2: 'Tarde 2',
   completo: 'Día completo',
   descansa: 'Descanso',
+  sin_turno: 'Sin turno',
   personalizado: 'Personalizado'
 };
 
@@ -46,7 +47,13 @@ export const SHIFT_THEME = {
     dot: 'bg-[#d50000]'
   },
   descansa: {
-    cell: 'bg-slate-50 border-dashed border-slate-300 text-slate-400 hover:border-slate-400',
+    cell: 'bg-red-50/50 border-dashed border-red-200 text-red-400 hover:border-red-300',
+    barOn: 'bg-red-200',
+    barOff: 'bg-red-100',
+    dot: 'bg-red-400'
+  },
+  sin_turno: {
+    cell: 'bg-slate-50 border-dashed border-slate-200 text-slate-400 hover:border-slate-300',
     barOn: 'bg-slate-300',
     barOff: 'bg-slate-200',
     dot: 'bg-slate-300'
@@ -66,8 +73,15 @@ export function hourLabel(index, edge = 'start') {
   return `${h12}:00 ${suffix}`;
 }
 
+export function hourLabelCompact(index, edge = 'start') {
+  const h = 8 + index + (edge === 'end' ? 1 : 0);
+  const suffix = h >= 12 && h < 24 ? 'PM' : 'AM';
+  const h12 = h > 12 ? h - 12 : h;
+  return `${h12}:00${suffix}`;
+}
+
 export function getShiftRange(sched) {
-  if (!sched || sched.type === 'descansa') return null;
+  if (!sched || sched.type === 'descansa' || sched.type === 'sin_turno') return null;
   if (sched.type === 'personalizado' && sched.start < 0) return null;
   const details = sched.type === 'personalizado' ? sched : getShiftDetails(sched.type);
   const start = Math.max(0, details.start);
@@ -76,9 +90,31 @@ export function getShiftRange(sched) {
 }
 
 export function rangeLabel(sched) {
+  if (sched?.type === 'sin_turno') return 'No labora';
   const range = getShiftRange(sched);
   if (!range) return 'Día libre';
   return `${hourLabel(range.start, 'start')} – ${hourLabel(range.end, 'end')}`;
+}
+
+export function breakBadgeLabel(sched) {
+  if (!sched) return '';
+  const details = sched.type === 'personalizado' ? sched : getShiftDetails(sched.type, undefined, undefined, sched.breakHour);
+  if (!isFullDayShift(sched.type, details.start, details.end)) return '';
+  const meta = getBreakMeta(sched.breakHour);
+  return `Refrig: ${meta.short}`;
+}
+
+export function excelCellShiftText(sched) {
+  if (!sched || sched.type === 'sin_turno') return '—';
+  if (sched.type === 'descansa') return 'DESCANSO';
+  const range = getShiftRange(sched);
+  if (!range) return '—';
+  const timeText = `${hourLabelCompact(range.start, 'start')} - ${hourLabelCompact(range.end, 'end')}`;
+  if (isFullDayShift(sched.type, range.start, range.end)) {
+    const meta = getBreakMeta(sched.breakHour);
+    return `${timeText}\n(REFRIG. ${meta.short})`;
+  }
+  return timeText;
 }
 
 export const PATTERNS = [
@@ -103,8 +139,13 @@ export const PATTERNS = [
     description: 'Lun descansa, mar completo, mié descansa…'
   },
   {
+    id: 'auxiliar',
+    label: 'Auxiliar / Apoyo puntual',
+    description: 'Todos los días sin turno, marcas solo los días que apoya'
+  },
+  {
     id: 'descanso',
-    label: 'Empezar vacío',
+    label: 'Empezar en descanso',
     description: 'Todos los días en descanso, lo armas tú'
   }
 ];
@@ -114,6 +155,7 @@ export const PATTERN_ICONS = {
   tarde: Sunset,
   'alt-completo': Repeat,
   'alt-descanso': Repeat,
+  auxiliar: UserCheck,
   descanso: BedDouble
 };
 
@@ -125,8 +167,9 @@ export function buildPattern(patternId) {
     else if (patternId === 'tarde') type = 'tarde';
     else if (patternId === 'alt-completo') type = i % 2 === 0 ? 'completo' : 'descansa';
     else if (patternId === 'alt-descanso') type = i % 2 === 0 ? 'descansa' : 'completo';
+    else if (patternId === 'auxiliar') type = 'sin_turno';
     const details = getShiftDetails(type);
-    result[day] = { type, start: details.start, end: details.end };
+    result[day] = { ...details, type };
   });
   return result;
 }

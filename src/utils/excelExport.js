@@ -1,18 +1,16 @@
 import ExcelJS from 'exceljs';
-import { DAYS, HOURS, getShiftHours, getShiftDetails } from './constants';
+import { DAYS, getShiftHours, getWeekDates } from './constants';
+import { excelCellShiftText } from './format';
 
-const RED = 'FFFF0000';
-const PURPLE = 'FF7030A0';
 const BLACK = 'FF000000';
 const WHITE = 'FFFFFFFF';
-const ROW_HEIGHT = 24;
-const FIRST_COL_WIDTH = 16;
-const COL_WIDTH = 5.2;
-const GAP_ROWS = 3;
+const HEADER_BLUE = 'FFB4C6E7';
+const STORE_BANNER = 'FFF4B084';
+const STORE_ROW_TINT = 'FFFCE4D6';
+const PURPLE = 'FF7030A0';
 const DEFAULT_SHIFT = { type: 'mañana', start: 0, end: 6 };
 
 const solid = (argb) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
-const toArgb = (color) => 'FF' + color.replace('#', '').toUpperCase();
 const edge = { style: 'thin', color: { argb: BLACK } };
 const thinBorder = { top: edge, left: edge, bottom: edge, right: edge };
 
@@ -27,174 +25,141 @@ function uniqueSheetName(wb, label) {
   return name;
 }
 
-function getRange(sched) {
-  const last = HOURS.length - 1;
-  if (sched.type === 'descansa') return [0, last];
-  const details = sched.type === 'personalizado' ? sched : getShiftDetails(sched.type);
-  const start = Math.max(0, details.start);
-  const end = Math.min(last, Math.max(start, details.end));
-  return [start, end];
+function getCellStyleByType(type) {
+  switch (type) {
+    case 'descansa':
+      return { fill: 'FFFF0000', fontColor: WHITE };
+    case 'sin_turno':
+      return { fill: 'FFF1F5F9', fontColor: 'FF94A3B8' };
+    case 'mañana':
+      return { fill: 'FFFFF2CC', fontColor: BLACK };
+    case 'tarde':
+      return { fill: 'FFFCE4D6', fontColor: BLACK };
+    case 'tarde2':
+      return { fill: 'FFD9E1F2', fontColor: BLACK };
+    case 'completo':
+      return { fill: 'FF99FFEB', fontColor: BLACK };
+    case 'personalizado':
+      return { fill: 'FFE2EFDA', fontColor: BLACK };
+    default:
+      return { fill: WHITE, fontColor: BLACK };
+  }
 }
 
-export async function generateExcel(batch, currentLabel, currentStores, currentSchedule) {
+export async function generateExcel(batch, currentLabel, currentStores, currentSchedule, currentStartDate) {
   const wb = new ExcelJS.Workbook();
   const batchToExport = batch.length > 0 ? batch : [{
     label: currentLabel || 'SEMANA',
+    startDateSnapshot: currentStartDate,
     storesSnapshot: currentStores,
     scheduleSnapshot: currentSchedule
   }];
 
   batchToExport.forEach(week => {
     const ws = wb.addWorksheet(uniqueSheetName(wb, week.label), {
-      properties: { defaultRowHeight: ROW_HEIGHT },
       pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
     });
 
-    let cursorRow = 1;
-    let globalMaxCol = 10;
+    const weekDates = getWeekDates(week.startDateSnapshot || currentStartDate);
 
-    week.storesSnapshot.forEach(store => {
-      const numPeople = store.people.length;
-      if (numPeople === 0) return;
+    // Encabezado filas 1 y 2
+    ws.mergeCells(1, 1, 2, 1);
+    const nameHeader = ws.getCell(1, 1);
+    nameHeader.value = 'Nombres';
+    nameHeader.font = { name: 'Calibri', size: 13, bold: true, color: { argb: BLACK } };
+    nameHeader.alignment = { horizontal: 'center', vertical: 'middle' };
 
-      const r0 = cursorRow;
-      const lastCol = 1 + 7 * (numPeople + 1);
-      if (lastCol > globalMaxCol) globalMaxCol = lastCol;
+    DAYS.forEach((day, idx) => {
+      const col = 2 + idx;
+      const dayCell = ws.getCell(1, col);
+      dayCell.value = day;
+      dayCell.fill = solid(HEADER_BLUE);
+      dayCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: BLACK } };
+      dayCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
-      const dayHeaderRow = r0 + 1;
-      const hourStartRow = r0 + 2;
-      const progRow = hourStartRow + HOURS.length;
-
-      ws.mergeCells(r0, 1, r0, lastCol);
-      const titleCell = ws.getCell(r0, 1);
-      titleCell.value = store.title;
-      titleCell.fill = solid(RED);
-      titleCell.font = { bold: true, color: { argb: WHITE }, size: 14, name: 'Calibri' };
-      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-      titleCell.border = thinBorder;
-
-      for (let r = dayHeaderRow; r <= progRow; r++) {
-        for (let c = 1; c <= lastCol; c++) {
-          ws.getCell(r, c).border = thinBorder;
-        }
-      }
-
-      const cornerCell = ws.getCell(dayHeaderRow, 1);
-      cornerCell.fill = solid(RED);
-
-      DAYS.forEach((day, di) => {
-        const startCol = 2 + di * (numPeople + 1);
-        const endCol = startCol + numPeople - 1;
-        const sepCol = endCol + 1;
-
-        if (numPeople > 1) ws.mergeCells(dayHeaderRow, startCol, dayHeaderRow, endCol);
-        const dayCell = ws.getCell(dayHeaderRow, startCol);
-        dayCell.value = day;
-        dayCell.fill = solid(RED);
-        dayCell.font = { bold: true, color: { argb: WHITE }, size: 12, name: 'Calibri' };
-        dayCell.alignment = { horizontal: 'center', vertical: 'middle' };
-
-        for (let row = dayHeaderRow; row <= progRow; row++) {
-          ws.getCell(row, sepCol).fill = solid(BLACK);
-        }
-
-        store.people.forEach((person, pi) => {
-          const col = startCol + pi;
-          const sched = week.scheduleSnapshot?.[store.id]?.[person.id]?.[day] || DEFAULT_SHIFT;
-          const hoursWorked = getShiftHours(sched);
-          const [from, to] = getRange(sched);
-          const range = [hourStartRow + from, hourStartRow + to];
-
-          let text = person.name;
-          if (sched.type === 'descansa') text = `${person.name} DESCANSA`;
-          else if (sched.type === 'completo') text = `${person.name} TODO EL DIA`;
-
-          if (range[0] !== range[1]) ws.mergeCells(range[0], col, range[1], col);
-
-          const cell = ws.getCell(range[0], col);
-          cell.value = text;
-          cell.fill = solid(toArgb(person.color));
-          cell.font = { size: 10, name: 'Calibri', bold: true, color: { argb: BLACK } };
-          cell.alignment = { horizontal: 'center', vertical: 'middle', textRotation: 90, shrinkToFit: true };
-
-          const hp = ws.getCell(progRow, col);
-          hp.value = hoursWorked;
-          hp.fill = solid(PURPLE);
-          hp.font = { size: 10, bold: true, color: { argb: WHITE } };
-          hp.alignment = { horizontal: 'center', vertical: 'middle' };
-        });
-      });
-
-      for (let i = 0; i < HOURS.length; i++) {
-        const hc = ws.getCell(hourStartRow + i, 1);
-        hc.value = HOURS[i];
-        hc.alignment = { horizontal: 'center', vertical: 'middle' };
-        hc.font = { name: 'Calibri', size: 10, bold: true, color: { argb: BLACK } };
-      }
-
-      const hpLabel = ws.getCell(progRow, 1);
-      hpLabel.value = 'HORAS PROG';
-      hpLabel.fill = solid(PURPLE);
-      hpLabel.font = { bold: true, size: 10, color: { argb: WHITE } };
-      hpLabel.alignment = { horizontal: 'center', vertical: 'middle' };
-
-      const sumHeaderRow = progRow + 3;
-
-      for (let r = sumHeaderRow; r <= sumHeaderRow + numPeople; r++) {
-        for (let c = 1; c <= 10; c++) {
-          ws.getCell(r, c).border = thinBorder;
-        }
-      }
-
-      const personalHeader = ws.getCell(sumHeaderRow, 1);
-      personalHeader.value = 'PERSONAL';
-      personalHeader.font = { bold: true, size: 10, color: { argb: BLACK } };
-      personalHeader.alignment = { horizontal: 'center', vertical: 'middle' };
-
-      ws.mergeCells(sumHeaderRow, 8, sumHeaderRow, 10);
-      const headerHoras = ws.getCell(sumHeaderRow, 8);
-      headerHoras.value = 'HORAS PROG.';
-      headerHoras.font = { bold: true, size: 10, color: { argb: BLACK } };
-      headerHoras.alignment = { horizontal: 'center', vertical: 'middle' };
-
-      store.people.forEach((person, pi) => {
-        const r = sumHeaderRow + 1 + pi;
-        const argbColor = toArgb(person.color);
-
-        const nameCell = ws.getCell(r, 1);
-        nameCell.value = person.name;
-        nameCell.fill = solid(argbColor);
-        nameCell.font = { bold: true, size: 10, color: { argb: BLACK } };
-        nameCell.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
-
-        for (let c = 2; c <= 7; c++) {
-          ws.getCell(r, c).fill = solid(argbColor);
-        }
-
-        let totalHours = 0;
-        DAYS.forEach(day => {
-          totalHours += getShiftHours(week.scheduleSnapshot?.[store.id]?.[person.id]?.[day] || DEFAULT_SHIFT);
-        });
-
-        ws.mergeCells(r, 8, r, 10);
-        const totalCell = ws.getCell(r, 8);
-        totalCell.value = totalHours;
-        totalCell.fill = solid(argbColor);
-        totalCell.font = { bold: true, size: 10, color: { argb: BLACK } };
-        totalCell.alignment = { horizontal: 'center', vertical: 'middle' };
-      });
-
-      cursorRow = sumHeaderRow + numPeople + GAP_ROWS;
+      const dateCell = ws.getCell(2, col);
+      dateCell.value = weekDates[idx];
+      dateCell.fill = solid(WHITE);
+      dateCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: BLACK } };
+      dateCell.alignment = { horizontal: 'center', vertical: 'middle' };
     });
 
-    ws.getColumn(1).width = FIRST_COL_WIDTH;
-    for (let c = 2; c <= globalMaxCol; c++) {
-      ws.getColumn(c).width = COL_WIDTH;
+    ws.mergeCells(1, 9, 2, 9);
+    const hoursHeader = ws.getCell(1, 9);
+    hoursHeader.value = 'HORAS PROG.';
+    hoursHeader.fill = solid(PURPLE);
+    hoursHeader.font = { name: 'Calibri', size: 10, bold: true, color: { argb: WHITE } };
+    hoursHeader.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+
+    for (let r = 1; r <= 2; r++) {
+      ws.getRow(r).height = 22;
+      for (let c = 1; c <= 9; c++) {
+        ws.getCell(r, c).border = thinBorder;
+      }
     }
 
-    for (let r = 1; r <= cursorRow; r++) {
-      ws.getRow(r).height = ROW_HEIGHT;
+    let currentRow = 3;
+
+    week.storesSnapshot.forEach(store => {
+      if (!store.people || store.people.length === 0) return;
+
+      // Fila separadora con el nombre de la tienda
+      const storeCell = ws.getCell(currentRow, 1);
+      storeCell.value = store.name;
+      storeCell.fill = solid(STORE_BANNER);
+      storeCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: BLACK } };
+      storeCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      storeCell.border = thinBorder;
+
+      for (let c = 2; c <= 9; c++) {
+        const blankCell = ws.getCell(currentRow, c);
+        blankCell.fill = solid(STORE_ROW_TINT);
+        blankCell.border = thinBorder;
+      }
+      ws.getRow(currentRow).height = 22;
+      currentRow += 1;
+
+      // Filas de personal
+      store.people.forEach(person => {
+        const personCell = ws.getCell(currentRow, 1);
+        personCell.value = person.name;
+        personCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: BLACK } };
+        personCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        personCell.border = thinBorder;
+
+        let totalHours = 0;
+
+        DAYS.forEach((day, idx) => {
+          const col = 2 + idx;
+          const sched = week.scheduleSnapshot?.[store.id]?.[person.id]?.[day] || DEFAULT_SHIFT;
+          totalHours += getShiftHours(sched);
+
+          const style = getCellStyleByType(sched.type);
+          const cell = ws.getCell(currentRow, col);
+          cell.value = excelCellShiftText(sched);
+          cell.fill = solid(style.fill);
+          cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: style.fontColor } };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cell.border = thinBorder;
+        });
+
+        const totalCell = ws.getCell(currentRow, 9);
+        totalCell.value = totalHours;
+        totalCell.fill = solid('FFF8FAFC');
+        totalCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: BLACK } };
+        totalCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        totalCell.border = thinBorder;
+
+        ws.getRow(currentRow).height = 30;
+        currentRow += 1;
+      });
+    });
+
+    ws.getColumn(1).width = 28;
+    for (let c = 2; c <= 8; c++) {
+      ws.getColumn(c).width = 23;
     }
+    ws.getColumn(9).width = 14;
   });
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -202,7 +167,8 @@ export async function generateExcel(batch, currentLabel, currentStores, currentS
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `Horario_${currentLabel.replace(/ /g, '_')}.xlsx`;
+  const fileNameLabel = (batchToExport[0]?.label || currentLabel || 'SEMANA').replace(/ /g, '_');
+  a.download = `Horario_${fileNameLabel}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

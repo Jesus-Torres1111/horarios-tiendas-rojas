@@ -7,7 +7,7 @@ import StoreCard from './components/StoreCard';
 import DateRangePicker from './components/DateRangePicker';
 import Login from './components/Login';
 import PreviewExcel from './components/PreviewExcel';
-import { INITIAL_STORES, DAYS, formatWeekLabel, getShiftDetails, getShiftHours, toLocalDateString } from './utils/constants';
+import { INITIAL_STORES, DAYS, formatWeekLabel, getShiftDetails, getShiftHours, toLocalDateString, getWeekRange, isFullDayShift } from './utils/constants';
 import { buildPattern } from './utils/format';
 import { generateExcel } from './utils/excelExport';
 import { loadState, saveState, getKey, clearKey } from './utils/storage';
@@ -105,16 +105,16 @@ export default function App() {
   const [weekBatch, setWeekBatch] = useState([]);
   const [ready, setReady] = useState(false);
   const [syncStatus, setSyncStatus] = useState('idle');
-  const [startDate, setStartDate] = useState(() => toLocalDateString(new Date()));
-  const [endDate, setEndDate] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() + 6);
-    return toLocalDateString(d);
-  });
+
+  const [startDate, setStartDate] = useState(() => getWeekRange(new Date()).start);
+  const [endDate, setEndDate] = useState(() => getWeekRange(new Date()).end);
+
   const [isExporting, setIsExporting] = useState(false);
   const [showGlobalPreview, setShowGlobalPreview] = useState(false);
   const [toast, setToast] = useState(null);
   const toastTimeoutRef = useRef(null);
   const canSyncRef = useRef(false);
+  const isFirstSyncRef = useRef(true);
 
   const showToast = useCallback((message, type = 'success') => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
@@ -127,6 +127,7 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated) return;
     let cancelled = false;
+    isFirstSyncRef.current = true;
     loadState().then(({ data, remote }) => {
       if (cancelled) return;
       if (isValidDoc(data)) {
@@ -143,6 +144,10 @@ export default function App() {
 
   useEffect(() => {
     if (!ready) return;
+    if (isFirstSyncRef.current) {
+      isFirstSyncRef.current = false;
+      return;
+    }
     setSyncStatus(canSyncRef.current ? 'saving' : 'local');
     const timer = setTimeout(async () => {
       const ok = await saveState({ stores, schedule, batch: weekBatch }, canSyncRef.current);
@@ -182,7 +187,7 @@ export default function App() {
     const finalName = (name || '').trim().toUpperCase() || `NUEVO ${store.people.length + 1}`;
     const finalColor = /^#[0-9a-fA-F]{6}$/.test(color || '') ? color : '#d50000';
     setStores(prev => prev.map(s => s.id === storeId ? { ...s, people: [...s.people, { id: newId, name: finalName, color: finalColor }] } : s));
-    setSchedule(prev => ({ ...prev, [storeId]: { ...prev[storeId], [newId]: buildPattern(pattern || 'descanso') } }));
+    setSchedule(prev => ({ ...prev, [storeId]: { ...prev[storeId], [newId]: buildPattern(pattern || 'auxiliar') } }));
     showToast(`${finalName} agregado a la tienda`);
   };
 
@@ -203,21 +208,33 @@ export default function App() {
     setStores(prev => prev.map(store => store.id === storeId ? { ...store, people: store.people.map(p => p.id === personId ? { ...p, color } : p) } : store));
   };
 
-  const updateShift = (storeId, personId, daysArray, type, startVal, endVal) => {
+  const updateShift = (storeId, personId, daysArray, type, startVal, endVal, breakHourVal) => {
     setSchedule(prev => {
       let start;
       let end;
+      let breakHour;
       if (type === 'personalizado') {
         const fromRest = startVal < 0;
         start = fromRest ? 0 : startVal;
         end = fromRest ? 6 : (endVal >= start ? endVal : start);
+        if (isFullDayShift('personalizado', start, end)) {
+          breakHour = Number.isInteger(breakHourVal) ? breakHourVal : 5;
+        }
       } else {
-        const details = getShiftDetails(type);
+        const details = getShiftDetails(type, undefined, undefined, breakHourVal);
         start = details.start;
         end = details.end;
+        breakHour = details.breakHour;
       }
       const nextPersonSchedule = { ...prev[storeId][personId] };
-      daysArray.forEach(d => { nextPersonSchedule[d] = { type, start, end }; });
+      daysArray.forEach(d => {
+        nextPersonSchedule[d] = {
+          type,
+          start,
+          end,
+          ...(Number.isInteger(breakHour) ? { breakHour } : {})
+        };
+      });
       return { ...prev, [storeId]: { ...prev[storeId], [personId]: nextPersonSchedule } };
     });
   };
@@ -229,19 +246,28 @@ export default function App() {
 
   const addWeekToBatch = () => {
     if (!startDate || !endDate) { showToast('Selecciona las fechas', 'error'); return; }
+    const label = formatWeekLabel(startDate, endDate);
     const weekData = {
-      label: formatWeekLabel(startDate, endDate),
+      label,
+      startDateSnapshot: startDate,
       storesSnapshot: JSON.parse(JSON.stringify(stores)),
       scheduleSnapshot: JSON.parse(JSON.stringify(schedule))
     };
-    setWeekBatch(prev => [...prev, weekData]);
-    showToast('Semana guardada en la lista');
+
+    const exists = weekBatch.some(w => w.label === label);
+    setWeekBatch(prev => {
+      if (exists) {
+        return prev.map(w => w.label === label ? weekData : w);
+      }
+      return [...prev, weekData];
+    });
+    showToast(exists ? 'Semana actualizada en la lista' : 'Semana guardada en la lista');
   };
 
   const handleExport = async () => {
     setIsExporting(true);
     try {
-      await generateExcel(weekBatch, formatWeekLabel(startDate, endDate), stores, schedule);
+      await generateExcel(weekBatch, formatWeekLabel(startDate, endDate), stores, schedule, startDate);
       showToast('Excel exportado correctamente');
     } catch (e) {
       console.error(e);
@@ -364,6 +390,7 @@ export default function App() {
               key={store.id}
               store={store}
               schedule={schedule}
+              startDate={startDate}
               onAddPerson={addPerson}
               onRemovePerson={removePerson}
               onUpdatePersonName={updatePersonName}
@@ -433,7 +460,7 @@ export default function App() {
         </section>
       </main>
 
-      <PreviewExcel isOpen={showGlobalPreview} onClose={() => setShowGlobalPreview(false)} stores={stores} schedule={schedule} />
+      <PreviewExcel isOpen={showGlobalPreview} onClose={() => setShowGlobalPreview(false)} stores={stores} schedule={schedule} startDate={startDate} />
       <Toast toast={toast} />
     </div>
   );
