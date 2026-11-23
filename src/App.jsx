@@ -267,8 +267,8 @@ export default function App() {
   const handleExport = async () => {
     setIsExporting(true);
     try {
-      await generateExcel(weekBatch, formatWeekLabel(startDate, endDate), stores, schedule, startDate);
-      showToast('Excel exportado correctamente');
+      const saved = await generateExcel(weekBatch, formatWeekLabel(startDate, endDate), stores, schedule, startDate);
+      if (saved) showToast('Excel exportado correctamente');
     } catch (e) {
       console.error(e);
       showToast('Error al exportar', 'error');

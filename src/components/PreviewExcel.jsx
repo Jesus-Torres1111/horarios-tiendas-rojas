@@ -1,14 +1,9 @@
 import React, { useEffect } from 'react';
 import { X, TableProperties } from 'lucide-react';
-import { DAYS, getShiftHours, getWeekDates, getContrastColorHex } from '../utils/constants';
+import { DAYS, getShiftHours, getWeekDates } from '../utils/constants';
 import { excelCellShiftText } from '../utils/format';
 
 const DEFAULT_SHIFT = { type: 'mañana', start: 0, end: 6 };
-
-function toCssContrastColor(hexColor) {
-  const argb = getContrastColorHex(hexColor);
-  return argb === 'FFFFFFFF' ? '#FFFFFF' : '#000000';
-}
 
 function getCellVisual(type, personColor) {
   if (type === 'descansa') {
@@ -30,7 +25,7 @@ function getCellVisual(type, personColor) {
     };
   }
   return {
-    style: { backgroundColor: personColor, color: toCssContrastColor(personColor) },
+    style: { backgroundColor: personColor, color: '#000000' },
     className: 'font-bold'
   };
 }
@@ -105,12 +100,11 @@ export default function PreviewExcel({ isOpen, onClose, store, stores, schedule,
 
                       {currentStore.people.map(p => {
                         let totalHours = 0;
-                        const nameTextColor = toCssContrastColor(p.color);
                         return (
                           <tr key={p.id}>
                             <td
                               className="border border-black px-3 py-2 text-xs font-black uppercase whitespace-nowrap"
-                              style={{ backgroundColor: p.color, color: nameTextColor }}
+                              style={{ backgroundColor: p.color, color: '#000000' }}
                             >
                               {p.name}
                             </td>
@@ -133,7 +127,7 @@ export default function PreviewExcel({ isOpen, onClose, store, stores, schedule,
                             })}
 
                             <td
-                              style={{ backgroundColor: p.color, color: nameTextColor }}
+                              style={{ backgroundColor: p.color, color: '#000000' }}
                               className="border border-black px-2 py-2 text-center text-xs font-black"
                             >
                               {totalHours} h

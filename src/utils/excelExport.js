@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { DAYS, getShiftHours, getWeekDates, getContrastColorHex } from './constants';
+import { DAYS, getShiftHours, getWeekDates } from './constants';
 import { excelCellShiftText } from './format';
 
 const BLACK = 'FF000000';
@@ -38,7 +38,7 @@ function getCellStyleByType(type, personColor) {
   }
   return {
     fill: toArgb(personColor),
-    fontColor: getContrastColorHex(personColor)
+    fontColor: BLACK
   };
 }
 
@@ -115,12 +115,11 @@ export async function generateExcel(batch, currentLabel, currentStores, currentS
 
       store.people.forEach(person => {
         const personFill = toArgb(person.color);
-        const personFontColor = getContrastColorHex(person.color);
 
         const personCell = ws.getCell(currentRow, 1);
         personCell.value = person.name;
         personCell.fill = solid(personFill);
-        personCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: personFontColor } };
+        personCell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: BLACK } };
         personCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
         personCell.border = thinBorder;
 
@@ -143,7 +142,7 @@ export async function generateExcel(batch, currentLabel, currentStores, currentS
         const totalCell = ws.getCell(currentRow, 9);
         totalCell.value = totalHours;
         totalCell.fill = solid(personFill);
-        totalCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: personFontColor } };
+        totalCell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: BLACK } };
         totalCell.alignment = { horizontal: 'center', vertical: 'middle' };
         totalCell.border = thinBorder;
 
@@ -160,14 +159,42 @@ export async function generateExcel(batch, currentLabel, currentStores, currentS
   });
 
   const buffer = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+  const fileNameLabel = (batchToExport[0]?.label || currentLabel || 'SEMANA').replace(/ /g, '_');
+  const suggestedName = `Horario_${fileNameLabel}.xlsx`;
+
+  if (typeof window.showSaveFilePicker === 'function') {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [
+          {
+            description: 'Archivo de Excel (.xlsx)',
+            accept: {
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx']
+            }
+          }
+        ]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return true;
+    } catch (err) {
+      if (err?.name === 'AbortError') return false;
+      throw err;
+    }
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  const fileNameLabel = (batchToExport[0]?.label || currentLabel || 'SEMANA').replace(/ /g, '_');
-  a.download = `Horario_${fileNameLabel}.xlsx`;
+  a.download = suggestedName;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  return true;
 }
